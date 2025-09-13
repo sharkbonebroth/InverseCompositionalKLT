@@ -16,7 +16,7 @@ public:
     };
 
     struct InverseCompositionalKLTConfig {
-        int windowSize = 21;
+        int windowSize = 15;
         int maxIterations = 30; 
         int numPyramidLevels = 3;
         float epsilon = 0.01; // Min delta for early optimizer termination
@@ -74,6 +74,8 @@ protected:
         std::vector<bool>& trackedSuccess
     ) const;
     void getTranslationalWarpJacobian(const float x, const float y, cv::Matx<float, 2, 2>& jacobian) const;
+    void getTranslationalSteepestDescentImages(const cv::Mat& img, std::vector<Eigen::Matrix<float, 2, 1>>& steepestDescentImages) const;
+    bool computeTranslationalHessianInverse(const std::vector<Eigen::Matrix<float, 2, 1>>& steepestDescentImages, Eigen::Matrix<float, 2, 2>& hessianInverse) const;
 
     void runAffineKLTSinglePyrLevel(
         const cv::Mat& prevFrame,

@@ -1,3 +1,4 @@
+#include <cstddef>
 #include <opencv2/core.hpp>
 #include <opencv2/core/hal/interface.h>
 #include <opencv2/highgui.hpp>
@@ -48,15 +49,7 @@ void InverseCompositionalKLT::feedFrame(
 
     std::vector<cv::Mat> pyrCurr;
     cv::buildPyramid(currFrame, pyrCurr, mConfig.numPyramidLevels);
-    // cv::imshow("currFrame0", pyrCurr[0]);
-    // cv::imshow("currFrame1", pyrCurr[1]);
-    // cv::imshow("currFrame2", pyrCurr[2]);
-
-    // cv::imshow("prevFrame0", mPrevPyr[0]);
-    // cv::imshow("prevFrame1", mPrevPyr[1]);
-    // cv::imshow("prevFrame2", mPrevPyr[2]);
-    // cv::waitKey();
-    
+      
     trackedSuccess.resize(pointsToTrackPrevFrame.size(), true);
 
     // Initialize warp function coefficients
@@ -82,9 +75,6 @@ void InverseCompositionalKLT::feedFrame(
             coeff(1, 2) *= scale;
         }
     }
-    // cv::imshow("prevFrame0", mPrevPyr[0]);
-    // cv::imshow("prevFrame1", mPrevPyr[1]);
-    // cv::imshow("prevFrame2", mPrevPyr[2]);
     std::vector<cv::Point2f> pyramidPointsPrevFrame(pointsToTrackPrevFrame.size());
     for (int lv = mConfig.numPyramidLevels-1; lv >= 0; lv--) {
         float scale = pow(2.0f, -lv);
@@ -102,7 +92,15 @@ void InverseCompositionalKLT::feedFrame(
                 warpFnCoeffs, 
                 trackedSuccess
             );
-            cv::waitKey();
+            cv::waitKey(10);
+        } else if (mConfig.warpType == WarpType::TRANSLATIONAL) {
+            runTranslationalKLTSinglePyrLevel(
+                mPrevPyr[lv], 
+                pyramidPointsPrevFrame, 
+                pyrCurr[lv], 
+                warpFnCoeffs, 
+                trackedSuccess
+            );
         } else {
             spdlog::error("Unsupported warp type!");
             break;
@@ -130,7 +128,9 @@ void InverseCompositionalKLT::feedFrame(
         }
     }
 
-    mPrevPyr = std::move(pyrCurr);
+    for (int lv = 0; lv < mConfig.numPyramidLevels; lv++) {
+        mPrevPyr[lv] = pyrCurr[lv].clone();
+    }
 }
 
 void InverseCompositionalKLT::sampleWarpedPatch( 
@@ -139,15 +139,15 @@ void InverseCompositionalKLT::sampleWarpedPatch(
     cv::Matx<float, 2, 3> affine, 
     cv::Mat& patch
 ) const {
-    affine(0, 2) += pt.x - mHalfWindowSize;
-    affine(1, 2) += pt.y - mHalfWindowSize;
+    affine(0, 2) += (pt.x - mHalfWindowSize);
+    affine(1, 2) += (pt.y - mHalfWindowSize);
 
     cv::warpAffine(
         img, 
         patch, 
         affine, 
         {mConfig.windowSize, mConfig.windowSize}, 
-        cv::INTER_LINEAR | cv::BORDER_REPLICATE // should i add WARP_INVERSE_MAP?
+        cv::INTER_LINEAR | cv::BORDER_REPLICATE | cv::WARP_INVERSE_MAP // should i add WARP_INVERSE_MAP?
     );
 }
 
@@ -250,31 +250,15 @@ void  InverseCompositionalKLT::getEuclideanSteepestDescentImages(const cv::Mat& 
 
             cv::Matx23f jacobian;
             getEuclideanWarpJacobian(col, row, jacobian);
-            steepestDescentImages[Idx] = {
-                jacobian(0, 0) * dx + jacobian(1, 0) * dy,
-                jacobian(0, 1) * dx + jacobian(1, 1) * dy,
-                jacobian(0, 2) * dx + jacobian(1, 2) * dy
-            };
 
+            // Div 32 to normalize the scharr kernel
+            steepestDescentImages[Idx] = {
+                (jacobian(0, 0) * dx + jacobian(1, 0) * dy) / 32,
+                (jacobian(0, 1) * dx + jacobian(1, 1) * dy) / 32,
+                (jacobian(0, 2) * dx + jacobian(1, 2) * dy) / 32
+            };
         }
     }
-
-    // cv::Mat steepestDescentViz0 = cv::Mat(img.size(), CV_32FC1);
-    // cv::Mat steepestDescentViz1 = cv::Mat(img.size(), CV_32FC1);
-    // cv::Mat steepestDescentViz2 = cv::Mat(img.size(), CV_32FC1);
-    // for (int row = 0; row < img.rows; row++) {
-    //     for (int col = 0; col < img.cols; col++) {
-    //         const int Idx = row * img.cols + col;
-
-    //         steepestDescentViz0.at<float>(row, col) = abs(steepestDescentImages[Idx](0, 0));
-    //         steepestDescentViz1.at<float>(row, col) = abs(steepestDescentImages[Idx](1, 0));
-    //         steepestDescentViz2.at<float>(row, col) = abs(steepestDescentImages[Idx](2, 0));
-    //     }
-    // }
-
-    // cv::imshow("channel0", (steepestDescentViz0));
-    // cv::imshow("channel1", steepestDescentViz1);
-    // cv::imshow("channel2", steepestDescentViz2);
 }
 
 bool InverseCompositionalKLT::computeEuclideanHessianInverse(
@@ -289,7 +273,6 @@ bool InverseCompositionalKLT::computeEuclideanHessianInverse(
         hessian += outerProduct;
     }
 
-    std::cout << hessian << std::endl;
     const float det = hessian.determinant();
     if (det < 0.05) {
         return false;
@@ -310,12 +293,137 @@ void InverseCompositionalKLT::convertEuclideanWarpCoeffToAffine(Eigen::Matrix<fl
     };
 }
 
+void InverseCompositionalKLT::runTranslationalKLTSinglePyrLevel(
+    const cv::Mat& prevFrame,
+    const std::vector<cv::Point2f>& pointsToTrackPrevFrame,
+    const cv::Mat& currFrame,
+    std::vector<cv::Matx23f>& warpCoeffs,
+    std::vector<bool>& trackedSuccess
+) const {
+    for (size_t i = 0; i < pointsToTrackPrevFrame.size(); i++) {
+        if (!trackedSuccess[i]) {
+            continue;
+        }
+
+        cv::Mat templateROI;
+        cv::getRectSubPix(
+            prevFrame, 
+            {mConfig.windowSize, mConfig.windowSize}, 
+            pointsToTrackPrevFrame[i], 
+            templateROI,
+            CV_32F
+        );
+
+        std::vector<Eigen::Matrix<float, 2, 1>> steepestDescentImgs;
+        getTranslationalSteepestDescentImages(templateROI, steepestDescentImgs);
+        Eigen::Matrix<float, 2, 2> hessianInverse;
+        // If hessian is degenerate, we do not proceed with tracking
+        if (!computeTranslationalHessianInverse(steepestDescentImgs, hessianInverse)) {
+
+            cv::Mat steepestDescentViz0 = cv::Mat(templateROI.size(), CV_32FC1);
+            cv::Mat steepestDescentViz1 = cv::Mat(templateROI.size(), CV_32FC1);
+            for (int row = 0; row < templateROI.rows; row++) {
+                for (int col = 0; col < templateROI.cols; col++) {
+                    const int Idx = row * templateROI.cols + col;
+
+                    steepestDescentViz0.at<float>(row, col) = abs(steepestDescentImgs[Idx](0, 0));
+                    steepestDescentViz1.at<float>(row, col) = abs(steepestDescentImgs[Idx](1, 0));
+                }
+            }
+            
+            trackedSuccess[i] = false;
+            continue;
+        }
+
+        for (int iterNum = 0; iterNum < mConfig.maxIterations; iterNum++) {
+            cv::Mat currROI;
+            sampleWarpedPatch(
+                pointsToTrackPrevFrame[i], 
+                currFrame, 
+                warpCoeffs[i], 
+                currROI
+            );
+
+            cv::Mat currROIFloat;
+            currROI.convertTo(currROIFloat, CV_32FC1);
+
+            cv::Mat diff;
+            cv::subtract(currROI, templateROI, diff, cv::noArray(), CV_32FC1);
+
+            Eigen::Matrix<float, 2, 1> tmp = Eigen::Matrix<float, 2, 1>::Zero();
+            for (int row = 0; row < diff.rows; row++) {
+                for (int col = 0; col < diff.cols; col++) {
+                    const int idx = diff.cols * row + col;
+
+                    tmp += steepestDescentImgs[idx] * diff.at<float>(row, col);
+                }
+            }
+
+            Eigen::Matrix<float, 2, 1> deltaCoeff = hessianInverse * tmp;
+            if (deltaCoeff.squaredNorm() <= mConfig.epsilon) {
+                break;
+            }
+
+            warpCoeffs[i](0, 2) -= deltaCoeff(0, 0);
+            warpCoeffs[i](1, 2) -= deltaCoeff(1, 0);
+        }
+    }
+}
+
 void InverseCompositionalKLT::getTranslationalWarpJacobian(const float x, const float y, cv::Matx<float, 2, 2>& jacobian) const {
     jacobian = {
         1, 0, 
         0, 1,
     };
 }
+
+void  InverseCompositionalKLT::getTranslationalSteepestDescentImages(const cv::Mat& img, std::vector<Eigen::Matrix<float, 2, 1>>& steepestDescentImages) const {
+    steepestDescentImages.resize(img.cols * img.rows);
+
+    cv::Mat dxImg, dyImg;
+    cv::Scharr(img, dxImg, CV_16U, 1, 0);
+    cv::Scharr(img, dyImg, CV_16U, 0, 1);
+
+    for (int row = 0; row < img.rows; row++) {
+        for (int col = 0; col < img.cols; col++) {
+            const int Idx = row * img.cols + col;
+            float dx = static_cast<float>(dxImg.at<short>(row, col));
+            float dy = static_cast<float>(dyImg.at<short>(row, col));
+
+            cv::Matx22f jacobian;
+            getTranslationalWarpJacobian(col, row, jacobian);
+
+            // Div 32 to normalize the scharr kernel
+            steepestDescentImages[Idx] = {
+                (jacobian(0, 0) * dx + jacobian(1, 0) * dy) / 32,
+                (jacobian(0, 1) * dx + jacobian(1, 1) * dy) / 32
+            };
+        }
+    }
+}
+
+bool InverseCompositionalKLT::computeTranslationalHessianInverse(
+    const std::vector<Eigen::Matrix<float, 2, 1>>& steepestDescentImages, 
+    Eigen::Matrix<float, 2, 2>& hessianInverse
+) const {
+    Eigen::Matrix<float, 2, 2> hessian = Eigen::Matrix<float, 2, 2>::Zero();
+
+    Eigen::Matrix<float, 2, 2> outerProduct;
+    for (const auto& sd: steepestDescentImages) {
+        outerProduct.noalias() = sd * sd.transpose();
+        hessian += outerProduct;
+    }
+
+    const float det = hessian.determinant();
+    if (det < 0.05) {
+        return false;
+    }
+
+    hessianInverse = hessian.inverse();
+
+    return true;
+}
+
 
 void InverseCompositionalKLT::getAffineWarpJacobian(const float x, const float y, cv::Matx<float, 2, 6>& jacobian) const {
     jacobian = {
@@ -326,30 +434,13 @@ void InverseCompositionalKLT::getAffineWarpJacobian(const float x, const float y
 
 
 void InverseCompositionalKLT::composeAffineWarp(const cv::Matx23f& affine1, const cv::Matx23f& affine2, cv::Matx23f& result) const {
-    // Eigen::Matrix<float, 3, 3> affine1Eig, affine2Eig, composedEig;
-
-    // affine1Eig  <<  affine1(0, 0), affine1(0, 1), affine1(0, 2),
-    //                 affine1(1, 0), affine1(1, 1), affine1(1, 2),
-    //                 0, 0, 1;
-
-    // affine2Eig  <<  affine2(0, 0), affine2(0, 1), affine2(0, 2),
-    //                 affine2(1, 0), affine2(1, 1), affine2(1, 2),
-    //                 0, 0, 1;
-
-    // composedEig.noalias() = affine1Eig * affine2Eig;
-    
-    // result = {
-    //     composedEig(0, 0), composedEig(0, 1), composedEig(0, 2),
-    //     composedEig(1, 0), composedEig(1, 1), composedEig(1, 2)
-    // };
-
-    const float a1 = affine2(0, 0) * affine1(0, 0) + affine2(1, 0) * affine1(0, 1) + affine2(2, 0) * affine1(0, 2);
-    const float a2 = affine2(0, 1) * affine1(0, 0) + affine2(1, 1) * affine1(0, 1) + affine2(2, 1) * affine1(0, 2);
-    const float a3 = affine2(0, 2) * affine1(0, 0) + affine2(1, 2) * affine1(0, 1) + affine2(2, 2) * affine1(0, 2);
-    const float a4 = affine2(0, 0) * affine1(1, 0) + affine2(1, 0) * affine1(1, 1) + affine2(2, 0) * affine1(1, 2);
-    const float a5 = affine2(0, 1) * affine1(1, 0) + affine2(1, 1) * affine1(1, 1) + affine2(2, 1) * affine1(1, 2);
-    const float a6 = affine2(0, 2) * affine1(1, 0) + affine2(1, 2) * affine1(1, 1) + affine2(2, 2) * affine1(1, 2);
-
+    const float a1 = affine2(0, 0) * affine1(0, 0) + affine2(1, 0) * affine1(0, 1);
+    const float a2 = affine2(0, 1) * affine1(0, 0) + affine2(1, 1) * affine1(0, 1);
+    const float a3 = affine2(0, 2) * affine1(0, 0) + affine2(1, 2) * affine1(0, 1) + affine1(0, 2);
+    const float a4 = affine2(0, 0) * affine1(1, 0) + affine2(1, 0) * affine1(1, 1);
+    const float a5 = affine2(0, 1) * affine1(1, 0) + affine2(1, 1) * affine1(1, 1);
+    const float a6 = affine2(0, 2) * affine1(1, 0) + affine2(1, 2) * affine1(1, 1) + affine1(1, 2);
+ 
     result = {
         a1, a2, a3,
         a4, a5, a6

@@ -10,7 +10,7 @@ int rectHeightDiv2 = 50;
 int rectWidthDiv2  = 50;
 int fullImgSizeWidth = 512;
 int fullImgSizeHeight = 512;
-cv::Vec3f speed = {1, 0, 0.1};
+cv::Vec3f speed = {15, -3, 0.01};
 
 cv::Matx23f convertSpeedToAffine() {
     const float cosTheta = cos(speed(2));
@@ -55,6 +55,7 @@ int main(int argc, char** argv) {
     cv::Matx23f affine = convertSpeedToAffine();
 
     InverseCompositionalKLT::InverseCompositionalKLTConfig conf;
+    conf.warpType = InverseCompositionalKLT::WarpType::TRANSLATIONAL;
     InverseCompositionalKLT opFlow(conf);
 
     std::vector<cv::Point2f> pointsToTrackPrevFrame;
@@ -74,7 +75,7 @@ int main(int argc, char** argv) {
     pointsToTrackPrevFrame.push_back({centre.x + rectWidthDiv2, centre.y - rectHeightDiv2});
     pointsToTrackPrevFrame.push_back({centre.x + rectWidthDiv2, centre.y + rectHeightDiv2});
 
-    for (int i = 0; i < 7; i++) {
+    for (int i = 0; i < 20; i++) {
         cv::Mat viz;
         drawPoints(img, viz, pointsToTrackPrevFrame);
         cv::imshow("viz", viz);
