@@ -10,7 +10,7 @@ int rectHeightDiv2 = 50;
 int rectWidthDiv2  = 50;
 int fullImgSizeWidth = 512;
 int fullImgSizeHeight = 512;
-cv::Vec3f speed = {1, 0, 0.2};
+cv::Vec3f speed = {1, 0, 0.1};
 
 cv::Matx23f convertSpeedToAffine() {
     const float cosTheta = cos(speed(2));

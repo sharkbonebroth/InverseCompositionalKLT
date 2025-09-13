@@ -1,4 +1,5 @@
 #include <opencv2/core.hpp>
+#include <opencv2/core/hal/interface.h>
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
 #include <spdlog/spdlog.h>
@@ -40,12 +41,21 @@ void InverseCompositionalKLT::feedFrame(
     }
 
     if (mPrevPyr.empty()) {
-        cv::buildPyramid(currFrame, mPrevPyr, mConfig.numPyramidLevels);
+        // Needs to be a clone of the currFrame else the first level will j continue referring to the same block of memory held by currFrame
+        cv::buildPyramid(currFrame.clone(), mPrevPyr, mConfig.numPyramidLevels); 
         return;
     }
 
     std::vector<cv::Mat> pyrCurr;
     cv::buildPyramid(currFrame, pyrCurr, mConfig.numPyramidLevels);
+    // cv::imshow("currFrame0", pyrCurr[0]);
+    // cv::imshow("currFrame1", pyrCurr[1]);
+    // cv::imshow("currFrame2", pyrCurr[2]);
+
+    // cv::imshow("prevFrame0", mPrevPyr[0]);
+    // cv::imshow("prevFrame1", mPrevPyr[1]);
+    // cv::imshow("prevFrame2", mPrevPyr[2]);
+    // cv::waitKey();
     
     trackedSuccess.resize(pointsToTrackPrevFrame.size(), true);
 
@@ -72,7 +82,9 @@ void InverseCompositionalKLT::feedFrame(
             coeff(1, 2) *= scale;
         }
     }
-    
+    // cv::imshow("prevFrame0", mPrevPyr[0]);
+    // cv::imshow("prevFrame1", mPrevPyr[1]);
+    // cv::imshow("prevFrame2", mPrevPyr[2]);
     std::vector<cv::Point2f> pyramidPointsPrevFrame(pointsToTrackPrevFrame.size());
     for (int lv = mConfig.numPyramidLevels-1; lv >= 0; lv--) {
         float scale = pow(2.0f, -lv);
@@ -90,6 +102,7 @@ void InverseCompositionalKLT::feedFrame(
                 warpFnCoeffs, 
                 trackedSuccess
             );
+            cv::waitKey();
         } else {
             spdlog::error("Unsupported warp type!");
             break;
@@ -158,6 +171,14 @@ void InverseCompositionalKLT::runEuclideanKLTSinglePyrLevel(
             templateROI,
             CV_32F
         );
+        cv::imshow("currFramePYR", currFrame);
+        cv::imshow("prevFramePYR", prevFrame);
+        cv::imshow("Template ROI", templateROI);
+
+        spdlog::info("Points to track:");
+        for (const auto& pt: pointsToTrackPrevFrame) {
+            std::cout << pt << std::endl;
+        }
 
         std::vector<Eigen::Matrix<float, 3, 1>> steepestDescentImgs;
         getEuclideanSteepestDescentImages(templateROI, steepestDescentImgs);
@@ -166,8 +187,6 @@ void InverseCompositionalKLT::runEuclideanKLTSinglePyrLevel(
         if (!computeEuclideanHessianInverse(steepestDescentImgs, hessianInverse)) {
             trackedSuccess[i] = false;
             continue;
-        } else {
-            spdlog::info("FFF");
         }
 
         for (int iterNum = 0; iterNum < mConfig.maxIterations; iterNum++) {
@@ -232,26 +251,30 @@ void  InverseCompositionalKLT::getEuclideanSteepestDescentImages(const cv::Mat& 
             cv::Matx23f jacobian;
             getEuclideanWarpJacobian(col, row, jacobian);
             steepestDescentImages[Idx] = {
-                jacobian(0, 0) * dx + jacobian(0, 1) * dy,
-                jacobian(1, 0) * dx + jacobian(1, 1) * dy,
-                jacobian(2, 0) * dx + jacobian(2, 1) * dy
+                jacobian(0, 0) * dx + jacobian(1, 0) * dy,
+                jacobian(0, 1) * dx + jacobian(1, 1) * dy,
+                jacobian(0, 2) * dx + jacobian(1, 2) * dy
             };
+
         }
     }
 
-    cv::Mat steepestDescentViz = cv::Mat(img.size(), CV_8UC3);
-    for (int row = 0; row < img.rows; row++) {
-        for (int col = 0; col < img.cols; col++) {
-            const int Idx = row * img.cols + col;
+    // cv::Mat steepestDescentViz0 = cv::Mat(img.size(), CV_32FC1);
+    // cv::Mat steepestDescentViz1 = cv::Mat(img.size(), CV_32FC1);
+    // cv::Mat steepestDescentViz2 = cv::Mat(img.size(), CV_32FC1);
+    // for (int row = 0; row < img.rows; row++) {
+    //     for (int col = 0; col < img.cols; col++) {
+    //         const int Idx = row * img.cols + col;
 
-            steepestDescentViz.at<cv::Vec3b>(row, col) = {
-                static_cast<unsigned char>(steepestDescentImages[Idx](0, 0)),
-                static_cast<unsigned char>(steepestDescentImages[Idx](1, 0)),
-                static_cast<unsigned char>(steepestDescentImages[Idx](2, 0))
-            };
-        }
-    }
+    //         steepestDescentViz0.at<float>(row, col) = abs(steepestDescentImages[Idx](0, 0));
+    //         steepestDescentViz1.at<float>(row, col) = abs(steepestDescentImages[Idx](1, 0));
+    //         steepestDescentViz2.at<float>(row, col) = abs(steepestDescentImages[Idx](2, 0));
+    //     }
+    // }
 
+    // cv::imshow("channel0", (steepestDescentViz0));
+    // cv::imshow("channel1", steepestDescentViz1);
+    // cv::imshow("channel2", steepestDescentViz2);
 }
 
 bool InverseCompositionalKLT::computeEuclideanHessianInverse(
