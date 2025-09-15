@@ -1,6 +1,7 @@
 #include <cstddef>
 #include <opencv2/core.hpp>
 #include <opencv2/core/hal/interface.h>
+#include <opencv2/core/types.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
 #include <spdlog/spdlog.h>
@@ -92,7 +93,6 @@ void InverseCompositionalKLT::feedFrame(
                 warpFnCoeffs, 
                 trackedSuccess
             );
-            cv::waitKey(10);
         } else if (mConfig.warpType == WarpType::TRANSLATIONAL) {
             runTranslationalKLTSinglePyrLevel(
                 mPrevPyr[lv], 
@@ -122,7 +122,7 @@ void InverseCompositionalKLT::feedFrame(
     pointsTrackedCurrFrame.resize(pointsToTrackPrevFrame.size());
     for (size_t i = 0; i < pointsToTrackPrevFrame.size(); i++) {
         if (trackedSuccess[i]) {
-            affineWarpPoint(warpFnCoeffs[i], pointsToTrackPrevFrame[i], pointsTrackedCurrFrame[i]);
+            getTrackedPointGivenAffine(warpFnCoeffs[i], pointsToTrackPrevFrame[i], pointsTrackedCurrFrame[i]);
         } else {
             pointsTrackedCurrFrame[i] = {-1, -1};
         }
@@ -147,7 +147,7 @@ void InverseCompositionalKLT::sampleWarpedPatch(
         patch, 
         affine, 
         {mConfig.windowSize, mConfig.windowSize}, 
-        cv::INTER_LINEAR | cv::BORDER_REPLICATE | cv::WARP_INVERSE_MAP // should i add WARP_INVERSE_MAP?
+        cv::INTER_LINEAR | cv::BORDER_REPLICATE | cv::WARP_INVERSE_MAP
     );
 }
 
@@ -171,14 +171,6 @@ void InverseCompositionalKLT::runEuclideanKLTSinglePyrLevel(
             templateROI,
             CV_32F
         );
-        cv::imshow("currFramePYR", currFrame);
-        cv::imshow("prevFramePYR", prevFrame);
-        cv::imshow("Template ROI", templateROI);
-
-        spdlog::info("Points to track:");
-        for (const auto& pt: pointsToTrackPrevFrame) {
-            std::cout << pt << std::endl;
-        }
 
         std::vector<Eigen::Matrix<float, 3, 1>> steepestDescentImgs;
         getEuclideanSteepestDescentImages(templateROI, steepestDescentImgs);
@@ -221,7 +213,8 @@ void InverseCompositionalKLT::runEuclideanKLTSinglePyrLevel(
                 trackedSuccess[i] = false;
                 break;
             }
-            cv::invertAffineTransform(affineUpdateInv, affineUpdate);
+            
+            inverseEuclideanTransform(affineUpdateInv, affineUpdate);
             composeAffineWarp(warpCoeffs[i], affineUpdate, composedAffine);
             warpCoeffs[i] = composedAffine;
         }
@@ -288,10 +281,18 @@ void InverseCompositionalKLT::convertEuclideanWarpCoeffToAffine(Eigen::Matrix<fl
     const float sinTheta = sin(warpCoeff(2));
 
     affine = {
-        cosTheta,  sinTheta, warpCoeff(0),
-        -sinTheta, cosTheta, warpCoeff(1)
+        cosTheta,  -sinTheta, warpCoeff(0),
+        sinTheta, cosTheta, warpCoeff(1)
     };
 }
+
+void InverseCompositionalKLT::inverseEuclideanTransform(const cv::Matx23f& euclidian, cv::Matx23f& euclidianInv) const {
+    euclidianInv = {
+        euclidian(0, 0), euclidian(1, 0), -(euclidian(0, 0) * euclidian(0, 2) + euclidian(1, 0) * euclidian(1, 2)),
+        euclidian(0, 1), euclidian(1, 1), -(euclidian(0, 1) * euclidian(0, 2) + euclidian(1, 1) * euclidian(1, 2))
+    };
+}
+
 
 void InverseCompositionalKLT::runTranslationalKLTSinglePyrLevel(
     const cv::Mat& prevFrame,
@@ -330,7 +331,7 @@ void InverseCompositionalKLT::runTranslationalKLTSinglePyrLevel(
                     steepestDescentViz1.at<float>(row, col) = abs(steepestDescentImgs[Idx](1, 0));
                 }
             }
-            
+
             trackedSuccess[i] = false;
             continue;
         }
@@ -343,9 +344,6 @@ void InverseCompositionalKLT::runTranslationalKLTSinglePyrLevel(
                 warpCoeffs[i], 
                 currROI
             );
-
-            cv::Mat currROIFloat;
-            currROI.convertTo(currROIFloat, CV_32FC1);
 
             cv::Mat diff;
             cv::subtract(currROI, templateROI, diff, cv::noArray(), CV_32FC1);
@@ -452,9 +450,9 @@ bool InverseCompositionalKLT::isAffineWarpDegenerate(const cv::Matx23f& affine) 
     return (det < 0.05);
 }
 
-void InverseCompositionalKLT::affineWarpPoint(const cv::Matx23f& affine, const cv::Point2f& point, cv::Point2f& warpedPoint) const {
+void InverseCompositionalKLT::getTrackedPointGivenAffine(const cv::Matx23f& affine, const cv::Point2f& point, cv::Point2f& warpedPoint) const {
     warpedPoint = {
-        point.x * affine(0, 0) + point.y * affine(0, 1) + affine(0, 2),
-        point.x * affine(1, 0) + point.y * affine(1, 1) + affine(1, 2)
+        mHalfWindowSize * affine(0, 0) + mHalfWindowSize * affine(0, 1) + affine(0, 2) + point.x - mHalfWindowSize,
+        mHalfWindowSize * affine(1, 0) + mHalfWindowSize * affine(1, 1) + affine(1, 2) + point.y - mHalfWindowSize
     };
 }

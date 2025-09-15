@@ -16,8 +16,8 @@ public:
     };
 
     struct InverseCompositionalKLTConfig {
-        int windowSize = 15;
-        int maxIterations = 30; 
+        int windowSize = 30;
+        int maxIterations = 50; 
         int numPyramidLevels = 3;
         float epsilon = 0.01; // Min delta for early optimizer termination
         float minEigThreshold = 0.001; 
@@ -65,6 +65,7 @@ protected:
     void getEuclideanSteepestDescentImages(const cv::Mat& img, std::vector<Eigen::Matrix<float, 3, 1>>& steepestDescentImages) const;
     bool computeEuclideanHessianInverse(const std::vector<Eigen::Matrix<float, 3, 1>>& steepestDescentImages, Eigen::Matrix<float, 3, 3>& hessianInverse) const;
     void convertEuclideanWarpCoeffToAffine(Eigen::Matrix<float, 3, 1> warpCoeff, cv::Matx23f& affine) const;
+    void inverseEuclideanTransform(const cv::Matx23f& euclidian, cv::Matx23f& euclidianInv) const;
 
     void runTranslationalKLTSinglePyrLevel(
         const cv::Mat& prevFrame,
@@ -88,7 +89,7 @@ protected:
 
     void composeAffineWarp(const cv::Matx23f& affine1, const cv::Matx23f& affine2, cv::Matx23f& result) const;
     bool isAffineWarpDegenerate(const cv::Matx23f& affine) const;
-    void affineWarpPoint(const cv::Matx23f& affine, const cv::Point2f& point, cv::Point2f& warpedPoint) const;
+    void getTrackedPointGivenAffine(const cv::Matx23f& affine, const cv::Point2f& point, cv::Point2f& warpedPoint) const;
 
 protected:
     InverseCompositionalKLTConfig mConfig;

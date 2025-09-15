@@ -10,7 +10,7 @@ int rectHeightDiv2 = 50;
 int rectWidthDiv2  = 50;
 int fullImgSizeWidth = 512;
 int fullImgSizeHeight = 512;
-cv::Vec3f speed = {15, -3, 0.01};
+cv::Vec3f speed = {15, 0, 0.05};
 
 cv::Matx23f convertSpeedToAffine() {
     const float cosTheta = cos(speed(2));
@@ -32,6 +32,14 @@ void drawRect(cv::Mat& img, const cv::Point2f& centre) {
         cv::Scalar_<unsigned char>(128),
         2
     );
+
+    cv::rectangle(
+        img,
+        {int(centre.x) + rectWidthDiv2, int(centre.y) - rectHeightDiv2},
+        {int(centre.x) + rectWidthDiv2 + 30, int(centre.y) - rectHeightDiv2 - 30},
+        cv::Scalar_<unsigned char>(128),
+        2
+    );
 }
 
 void drawPoints(const cv::Mat& img, cv::Mat& imgWCircles, const std::vector<cv::Point2f>& points) {
@@ -50,12 +58,12 @@ void drawPoints(const cv::Mat& img, cv::Mat& imgWCircles, const std::vector<cv::
 int main(int argc, char** argv) {
 
     cv::Mat img;
-    cv::Point2f centre = {60, 450};
+    cv::Point2f centre = {200, 450};
     drawRect(img, centre);
     cv::Matx23f affine = convertSpeedToAffine();
 
     InverseCompositionalKLT::InverseCompositionalKLTConfig conf;
-    conf.warpType = InverseCompositionalKLT::WarpType::TRANSLATIONAL;
+    // conf.warpType = InverseCompositionalKLT::WarpType::TRANSLATIONAL;
     InverseCompositionalKLT opFlow(conf);
 
     std::vector<cv::Point2f> pointsToTrackPrevFrame;
