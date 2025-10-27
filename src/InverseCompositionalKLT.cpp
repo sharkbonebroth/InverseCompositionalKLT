@@ -1,7 +1,5 @@
-#include <cstddef>
 #include <opencv2/core.hpp>
 #include <opencv2/core/hal/interface.h>
-#include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
 #include <spdlog/spdlog.h>
 #include <Eigen/LU>
@@ -513,13 +511,6 @@ void InverseCompositionalKLT::getAffineSteepestDescentImages(const cv::Mat& img,
     cv::Scharr(img, dxImg, CV_32F, 1, 0);
     cv::Scharr(img, dyImg, CV_32F, 0, 1);
 
-    cv::Mat tmp0 = cv::Mat::zeros(img.size(), CV_32FC1);
-    cv::Mat tmp1 = cv::Mat::zeros(img.size(), CV_32FC1);
-    cv::Mat tmp2 = cv::Mat::zeros(img.size(), CV_32FC1);
-    cv::Mat tmp3 = cv::Mat::zeros(img.size(), CV_32FC1);
-    cv::Mat tmp4 = cv::Mat::zeros(img.size(), CV_32FC1);
-    cv::Mat tmp5 = cv::Mat::zeros(img.size(), CV_32FC1);
-
     for (int row = 0; row < img.rows; row++) {
         for (int col = 0; col < img.cols; col++) {
             const int Idx = row * img.cols + col;
@@ -538,24 +529,8 @@ void InverseCompositionalKLT::getAffineSteepestDescentImages(const cv::Mat& img,
                 (jacobian(0, 4) * dx + jacobian(1, 4) * dy) / 32,
                 (jacobian(0, 5) * dx + jacobian(1, 5) * dy) / 32
             };
-            
-            tmp0.at<float>(row, col) = (jacobian(0, 0) * dx + jacobian(1, 0) * dy);
-            tmp1.at<float>(row, col) = (jacobian(0, 1) * dx + jacobian(1, 1) * dy);
-            tmp2.at<float>(row, col) = (jacobian(0, 2) * dx + jacobian(1, 2) * dy);
-            tmp3.at<float>(row, col) = (jacobian(0, 3) * dx + jacobian(1, 3) * dy);
-            tmp4.at<float>(row, col) = (jacobian(0, 4) * dx + jacobian(1, 4) * dy);
-            tmp5.at<float>(row, col) = (jacobian(0, 5) * dx + jacobian(1, 5) * dy);
         }
     }
-
-
-    // cv::imshow("tmp0", tmp0);
-    // cv::imshow("tmp1", tmp1);
-    // cv::imshow("tmp2", tmp2);
-    // cv::imshow("tmp3", tmp3);
-    // cv::imshow("tmp4", tmp4);
-    // cv::imshow("tmp5", tmp5);
-    // cv::waitKey();
 }
 
 bool InverseCompositionalKLT::computeAffineHessianInverse(
@@ -572,7 +547,6 @@ bool InverseCompositionalKLT::computeAffineHessianInverse(
 
     const float det = hessian.determinant();
     if (det < 0.05) {
-        spdlog::info("FAIL: {}", det);
         return false;
     }
 
