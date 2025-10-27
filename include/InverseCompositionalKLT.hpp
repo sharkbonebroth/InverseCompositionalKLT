@@ -47,13 +47,7 @@ public:
     );
 
 protected:
-    void sampleWarpedPatch( // Given a point for a patch in the template image, samples the corresponding patch in the warped new image, given the estimated affine warp
-        const cv::Point2f& pt,
-        const cv::Mat& img, 
-        cv::Matx<float, 2, 3> affine, 
-        cv::Mat& patch
-    ) const;
-
+    // Euclidean KLT specific functions
     void runEuclideanKLTSinglePyrLevel(
         const cv::Mat& prevFrame,
         const std::vector<cv::Point2f>& pointsToTrackPrevFrame,
@@ -67,6 +61,7 @@ protected:
     void convertEuclideanWarpCoeffToAffine(Eigen::Matrix<float, 3, 1> warpCoeff, cv::Matx23f& affine) const;
     void inverseEuclideanTransform(const cv::Matx23f& euclidian, cv::Matx23f& euclidianInv) const;
 
+    // Translational KLT specific functions
     void runTranslationalKLTSinglePyrLevel(
         const cv::Mat& prevFrame,
         const std::vector<cv::Point2f>& pointsToTrackPrevFrame,
@@ -78,6 +73,7 @@ protected:
     void getTranslationalSteepestDescentImages(const cv::Mat& img, std::vector<Eigen::Matrix<float, 2, 1>>& steepestDescentImages) const;
     bool computeTranslationalHessianInverse(const std::vector<Eigen::Matrix<float, 2, 1>>& steepestDescentImages, Eigen::Matrix<float, 2, 2>& hessianInverse) const;
 
+    // Affine KLT specific functions
     void runAffineKLTSinglePyrLevel(
         const cv::Mat& prevFrame,
         const std::vector<cv::Point2f>& pointsToTrackPrevFrame,
@@ -86,7 +82,15 @@ protected:
         std::vector<bool>& trackedSuccess
     ) const;
     void getAffineWarpJacobian(const float x, const float y, cv::Matx<float, 2, 6>& jacobian) const;
+    void getAffineSteepestDescentImages(const cv::Mat& img, std::vector<Eigen::Matrix<float, 6, 1>>& steepestDescentImages) const;
+    bool computeAffineHessianInverse(const std::vector<Eigen::Matrix<float, 6, 1>>& steepestDescentImages, Eigen::Matrix<float, 6, 6>& hessianInverse) const;
 
+    void sampleWarpedPatch( // Given a point for a patch in the template image, samples the corresponding patch in the warped new image, given the estimated affine warp
+        const cv::Point2f& pt,
+        const cv::Mat& img, 
+        cv::Matx<float, 2, 3> affine, 
+        cv::Mat& patch
+    ) const;
     void composeAffineWarp(const cv::Matx23f& affine1, const cv::Matx23f& affine2, cv::Matx23f& result) const;
     bool isAffineWarpDegenerate(const cv::Matx23f& affine) const;
 
